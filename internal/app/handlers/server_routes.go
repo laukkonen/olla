@@ -39,6 +39,7 @@ func (a *Application) registerRoutes() {
 	// for operations and shouldn't depend on any provider configuration
 	a.routeRegistry.RegisterWithMethod(constants.DefaultHealthCheckEndpoint, a.healthHandler, "Health check endpoint", "GET")
 	a.routeRegistry.RegisterWithMethod("/internal/status", middleware.GzipFunc(a.statusHandler), "Endpoint status", "GET")
+	a.routeRegistry.RegisterWithMethod("/internal/status/queue", middleware.GzipFunc(a.queueStatusHandler), "Admission queue status", "GET")
 	a.routeRegistry.RegisterWithMethod(constants.DefaultMetricsEndpoint, a.metricsHandler, "Prometheus metrics", "GET")
 	a.routeRegistry.RegisterWithMethod("/internal/status/endpoints", middleware.GzipFunc(a.endpointsStatusHandler), "Endpoints status", "GET")
 	a.routeRegistry.RegisterWithMethod("/internal/status/models", middleware.GzipFunc(a.modelsStatusHandler), "Models status", "GET")
@@ -106,6 +107,12 @@ func (a *Application) mountDashboard() {
 		return
 	}
 	dashboard.RegisterRoutes(a.routeRegistry, a.Config.Dashboard, a.logger, dashboardHandlerFactory())
+	// Keep the request feed behind the exact same network access policy as the
+	// embedded UI. It is read-only and intentionally has no disk-backed state.
+	api := dashboard.AccessMiddleware(a.Config.Dashboard, a.logger,
+		http.HandlerFunc(a.requestHistory.handler))
+	a.routeRegistry.RegisterWithMethod("/internal/ui/api/requests", http.HandlerFunc(api.ServeHTTP),
+		"Recent proxy requests", http.MethodGet)
 }
 
 // registerTranslatorRoutes dynamically registers routes for all translators

@@ -6,7 +6,7 @@
   import StatusTag from '../components/StatusTag.svelte';
   import RangeBar from '../components/RangeBar.svelte';
   import PctBar from '../components/PctBar.svelte';
-  import { fmtAgo, fmtUntil } from '../lib/format';
+  import { fmtAgo, fmtUntil, fmtBytes } from '../lib/format';
   import { stableId } from '../lib/dom-id';
   import { getNow as liveNow } from '../lib/clock.svelte';
   import type { EndpointSummary } from '../lib/types';
@@ -73,6 +73,7 @@
     },
     { key: 'avg_latency_ms', label: 'Latency', sortable: true, num: true, align: 'right' },
     { key: 'model_count', label: 'Models', sortable: true, num: true, align: 'right' },
+    { key: 'loaded_models', label: 'Loaded', sortable: false },
     { key: 'request_count', label: 'Requests', sortable: true, num: true, align: 'right' },
     { key: 'active_connections', label: 'Conn', sortable: true, num: true, align: 'right' },
     { key: 'url', label: 'URL', sortable: false },
@@ -166,6 +167,15 @@
           />
         </td>
         <td class={cellClass('model_count')}>{#if e.model_count === 0}<span class="dash">0</span>{:else}{e.model_count}{/if}</td>
+        <td class="loaded-models-cell">
+          {#if e.loaded_models?.length}
+            <div class="loaded-models" aria-label={`${e.loaded_models.length} loaded model${e.loaded_models.length === 1 ? '' : 's'}`}>
+              {#each e.loaded_models as model}
+                <span class="model-badge" title={`${model.name}${model.context_length ? ` · ctx ${model.context_length.toLocaleString('en-AU')}` : ''}${model.size_vram ? ` · ${fmtBytes(model.size_vram)} VRAM` : ''}${model.expires_at ? ` · expires ${fmtUntil(model.expires_at, now)}` : ''}`}>{model.name}</span>
+              {/each}
+            </div>
+          {:else}<span class="dash">—</span>{/if}
+        </td>
         <td class={cellClass('request_count')}>{e.request_count?.toLocaleString('en-AU') ?? 0}</td>
         <td class={cellClass('active_connections')}>{#if e.active_connections > 0}{e.active_connections}{:else}<span class="dash">0</span>{/if}</td>
         <td class="url-cell" title={e.url}>{e.url || '—'}</td>

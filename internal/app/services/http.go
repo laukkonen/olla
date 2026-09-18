@@ -145,6 +145,7 @@ func (s *HTTPService) Start(ctx context.Context) error {
 	// Wire sticky session stats if enabled - proxySvc holds the wrapper.
 	if s.proxySvc != nil {
 		s.application.SetStickyStatsFn(s.proxySvc.StickyStats)
+		s.application.SetQueueSnapshotFn(s.proxySvc.QueueSnapshot)
 	}
 
 	// Wire real security adapters so non-proxy routes get size validation.

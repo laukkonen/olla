@@ -1,6 +1,10 @@
 package domain
 
-import "github.com/puzpuzpuz/xsync/v4"
+import (
+	"time"
+
+	"github.com/puzpuzpuz/xsync/v4"
+)
 
 const (
 	InspectionMetaPathSupport = "path_support"
@@ -26,7 +30,10 @@ type RequestProfile struct {
 	RoutingDecision      *ModelRoutingDecision // Routing strategy decision
 	Path                 string
 	ModelName            string
-	SupportedBy          []string
+	// RequestedContext is options.num_ctx (or top-level num_ctx) from the
+	// JSON body. Zero means the client did not specify a window.
+	RequestedContext int
+	SupportedBy      []string
 
 	RequestType     RequestType // Chat, completion, embedding, etc.
 	EstimatedTokens int         // For capacity planning
@@ -107,4 +114,13 @@ type StickyOutcome struct {
 	Result string
 	// Source is which key source produced the affinity key.
 	Source string
+}
+
+// AdmissionOutcome carries the caller-class decision back to the handler via
+// context. The handler allocates it (and may prefill Class/Source); the
+// admission wrapper overwrites Waited after a queue wait.
+type AdmissionOutcome struct {
+	Class  string
+	Source string // header | cidr | default
+	Waited time.Duration
 }

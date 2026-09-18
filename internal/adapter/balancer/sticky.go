@@ -13,6 +13,7 @@ import (
 	"github.com/thushan/olla/internal/config"
 	"github.com/thushan/olla/internal/core/constants"
 	"github.com/thushan/olla/internal/core/domain"
+	"github.com/thushan/olla/internal/core/ports"
 	"github.com/tidwall/gjson"
 )
 
@@ -30,14 +31,19 @@ type StickyOutcome = domain.StickyOutcome
 // goroutines will select valid backends and the last writer wins, which
 // converges quickly in practice.
 type StickySessionWrapper struct {
-	inner domain.EndpointSelector
-	store *ttlcache.Cache[string, string]
-	cfg   config.StickySessionConfig
+	inner          domain.EndpointSelector
+	store          *ttlcache.Cache[string, string]
+	cfg            config.StickySessionConfig
+	statsCollector ports.StatsCollector
 }
 
 // NewStickySessionWrapper wraps inner with sticky session affinity using cfg.
+// statsCollector is used to check whether the pinned backend has a free
+// num_parallel slot before honouring a sticky hit; pass nil to skip the
+// capacity check (a sticky hit is then honoured regardless of load, matching
+// prior behaviour).
 // Call Start() after construction and Stop() on shutdown.
-func NewStickySessionWrapper(inner domain.EndpointSelector, cfg config.StickySessionConfig) *StickySessionWrapper {
+func NewStickySessionWrapper(inner domain.EndpointSelector, cfg config.StickySessionConfig, statsCollector ports.StatsCollector) *StickySessionWrapper {
 	idleTTL := time.Duration(cfg.IdleTTLSeconds) * time.Second
 
 	if cfg.IdleTTLSeconds <= 0 {
@@ -52,9 +58,10 @@ func NewStickySessionWrapper(inner domain.EndpointSelector, cfg config.StickySes
 	)
 
 	return &StickySessionWrapper{
-		inner: inner,
-		store: store,
-		cfg:   cfg,
+		inner:          inner,
+		store:          store,
+		cfg:            cfg,
+		statsCollector: statsCollector,
 	}
 }
 
@@ -108,6 +115,11 @@ func (s *StickySessionWrapper) Select(ctx context.Context, endpoints []*domain.E
 		pinnedURL := item.Value()
 		for _, ep := range endpoints {
 			if ep.Status.IsRoutable() && ep.URLString == pinnedURL {
+				if s.isAtCapacity(ep) {
+					// Pinned backend is alive but every num_parallel slot is busy —
+					// fall through to repin rather than queue behind it indefinitely.
+					break
+				}
 				// Sticky hit — backend is still alive and serving this model.
 				if outcome != nil {
 					outcome.Result = "hit"
@@ -116,7 +128,7 @@ func (s *StickySessionWrapper) Select(ctx context.Context, endpoints []*domain.E
 				return ep, nil
 			}
 		}
-		// Pinned backend is gone or unhealthy — fall through to repin.
+		// Pinned backend is gone, unhealthy, or full — fall through to repin.
 	}
 
 	chosen, err := s.inner.Select(ctx, endpoints)
@@ -139,6 +151,18 @@ func (s *StickySessionWrapper) Select(ctx context.Context, endpoints []*domain.E
 	}
 
 	return chosen, nil
+}
+
+// isAtCapacity reports whether ep has no free num_parallel slot, per the
+// in-flight connection count Olla itself tracks. Reuses numParallelSlots
+// from warm_first.go (same package) so both selectors agree on what "full"
+// means for a given endpoint's configured (or defaulted) OLLAMA_NUM_PARALLEL.
+// Returns false (never full) when no stats collector is wired up.
+func (s *StickySessionWrapper) isAtCapacity(ep *domain.Endpoint) bool {
+	if s.statsCollector == nil {
+		return false
+	}
+	return s.statsCollector.GetConnectionCount(ep.URLString) >= int64(numParallelSlots(ep))
 }
 
 // PurgeDeadEndpoints removes session entries that point to backends no longer

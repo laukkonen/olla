@@ -44,6 +44,29 @@
   width: auto;
   flex-shrink: 0;
 }
+
+.loaded-models-cell {
+  min-width: 180px;
+}
+.loaded-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.model-badge {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
 /* Wordmark column: OLLA stacked over the subtitle, bottom-aligned against
    the logo so the lockup stays compact. */
 .brand-text {
@@ -237,6 +260,14 @@ main {
   background: var(--border);
   border: 1px solid var(--border);
 }
+.queue-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--space-4) 0;
+}
+.queue-table table { min-width: 760px; }
+.empty-cell { text-align: center; color: var(--text-faint); padding: var(--space-5); }
 .tile {
   background: var(--bg-elevated);
   padding: var(--space-3) var(--space-4);

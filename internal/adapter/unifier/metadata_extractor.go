@@ -172,9 +172,16 @@ func inferCapabilitiesFromMetadata(modelType, modelName string, contextLength in
 
 	// Preserve explicitly declared capabilities from source metadata
 	if metadata != nil {
-		if caps, ok := metadata["capabilities"].([]interface{}); ok {
+		switch caps := metadata["capabilities"].(type) {
+		case []interface{}:
 			for _, cap := range caps {
 				if capStr, ok := cap.(string); ok {
+					capabilities[capStr] = true
+				}
+			}
+		case []string:
+			for _, capStr := range caps {
+				if capStr != "" {
 					capabilities[capStr] = true
 				}
 			}

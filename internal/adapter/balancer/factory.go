@@ -11,6 +11,7 @@ import (
 const DefaultBalancerPriority = "priority"
 const DefaultBalancerRoundRobin = "round-robin"
 const DefaultBalancerLeastConnections = "least-connections"
+const DefaultBalancerWarmFirst = "warm-first"
 
 type Factory struct {
 	creators       map[string]func(ports.StatsCollector) domain.EndpointSelector
@@ -19,6 +20,10 @@ type Factory struct {
 }
 
 func NewFactory(statsCollector ports.StatsCollector) *Factory {
+	return NewFactoryWithOptions(statsCollector, "")
+}
+
+func NewFactoryWithOptions(statsCollector ports.StatsCollector, contextTiebreak string) *Factory {
 	factory := &Factory{
 		creators:       make(map[string]func(ports.StatsCollector) domain.EndpointSelector),
 		statsCollector: statsCollector,
@@ -32,6 +37,9 @@ func NewFactory(statsCollector ports.StatsCollector) *Factory {
 	})
 	factory.Register(DefaultBalancerLeastConnections, func(collector ports.StatsCollector) domain.EndpointSelector {
 		return NewLeastConnectionsSelector(collector)
+	})
+	factory.Register(DefaultBalancerWarmFirst, func(collector ports.StatsCollector) domain.EndpointSelector {
+		return NewWarmFirstSelectorWithTiebreak(collector, contextTiebreak)
 	})
 
 	return factory

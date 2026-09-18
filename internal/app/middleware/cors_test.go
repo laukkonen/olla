@@ -208,6 +208,8 @@ func TestDefaultCORSExposedHeaders(t *testing.T) {
 		constants.HeaderXOllaStickySession,
 		constants.HeaderXOllaStickyKeySource,
 		constants.HeaderXOllaSessionID,
+		constants.HeaderXOllaClass,
+		constants.HeaderXOllaClassSource,
 	}
 
 	defaultSet := make(map[string]struct{}, len(DefaultCORSExposedHeaders))

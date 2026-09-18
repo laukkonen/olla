@@ -36,12 +36,15 @@ type proxyRequest struct {
 	// stickyOutcome, stickySource, and sessionID are populated after endpoint
 	// selection so the routing outcome is visible in completed-request log lines.
 	// sessionID must only appear at DEBUG because client-supplied IDs are user data.
-	stickyOutcome string
-	stickySource  string
-	sessionID     string
-	contentLength int64
-	hadError      bool
-	isStreaming   bool
+	stickyOutcome   string
+	stickySource    string
+	sessionID       string
+	admissionClass  string
+	admissionSource string
+	contentLength   int64
+	hadError        bool
+	isStreaming     bool
+	admissionWaited time.Duration
 }
 
 func (a *Application) proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +236,11 @@ func (pr *proxyRequest) captureStickyOutcome(ctx context.Context, r *http.Reques
 		pr.stickySource = outcome.Source
 	}
 	pr.sessionID = r.Header.Get(constants.HeaderXOllaSessionID)
+	if outcome, ok := ctx.Value(constants.ContextAdmissionOutcomeKey).(*domain.AdmissionOutcome); ok && outcome != nil {
+		pr.admissionClass = outcome.Class
+		pr.admissionSource = outcome.Source
+		pr.admissionWaited = outcome.Waited
+	}
 }
 
 // injectStickyKey computes the affinity key for this request and injects it into the context.
@@ -324,8 +332,11 @@ func (a *Application) getCompatibleEndpoints(ctx context.Context, pr *proxyReque
 
 func (a *Application) executeProxyRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, endpoints []*domain.Endpoint, pr *proxyRequest) error {
 	ctx, r = a.prepareProxyContext(ctx, r, pr)
-
-	return a.proxyService.ProxyRequestToEndpoints(ctx, w, r, endpoints, pr.stats, pr.requestLogger)
+	err := a.proxyService.ProxyRequestToEndpoints(ctx, w, r, endpoints, pr.stats, pr.requestLogger)
+	// Capture from the prepared context so admission (injected here, not on the
+	// outer handler ctx) shows up on "Request completed" the same way sticky does.
+	pr.captureStickyOutcome(ctx, r)
+	return err
 }
 
 func (a *Application) logRequestStart(pr *proxyRequest, endpointCount int) {
@@ -471,6 +482,16 @@ func (a *Application) logRequestResult(pr *proxyRequest, err error) {
 		// "disabled" carries no signal; omit it to avoid noise in deployments without sticky sessions
 		if pr.stickyOutcome != "" && pr.stickyOutcome != "disabled" {
 			infoFields = append(infoFields, "sticky_outcome", pr.stickyOutcome)
+		}
+
+		if pr.admissionClass != "" {
+			infoFields = append(infoFields, "admission_class", pr.admissionClass)
+			if pr.admissionSource != "" {
+				infoFields = append(infoFields, "admission_source", pr.admissionSource)
+			}
+			if pr.admissionWaited > 0 {
+				infoFields = append(infoFields, "admission_wait_ms", pr.admissionWaited.Milliseconds())
+			}
 		}
 
 		// the client-supplied session id, logged alongside the outcome so affinity
@@ -854,8 +875,9 @@ func (a *Application) findCapableModels(requiredCapabilities []string, logger lo
 	ctx := context.Background()
 	capableModels := make(map[string]bool)
 	hasCapabilitySupport := false
+	first := true
 
-	for i, capability := range requiredCapabilities {
+	for _, capability := range requiredCapabilities {
 		models, err := a.modelRegistry.GetModelsByCapability(ctx, capability)
 		if err != nil {
 			logger.Warn("Failed to get models by capability",
@@ -864,14 +886,17 @@ func (a *Application) findCapableModels(requiredCapabilities []string, logger lo
 			continue
 		}
 
-		if len(models) > 0 {
-			hasCapabilitySupport = true
+		// Skip labels the registry does not advertise (Ollama has tools/thinking,
+		// not "code"). Intersecting an empty set would drop every endpoint.
+		if len(models) == 0 {
+			continue
 		}
 
-		if i == 0 {
+		hasCapabilitySupport = true
+		if first {
 			a.addModelsToMap(models, capableModels)
+			first = false
 		} else {
-			// set intersection - only keep models that have all capabilities
 			capableModels = a.intersectModels(models, capableModels)
 		}
 	}

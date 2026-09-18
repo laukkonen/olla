@@ -88,6 +88,29 @@ export interface StatusResponse {
   system: SystemSummary;
 }
 
+// --- handler_status_queue.go ------------------------------------------
+
+export interface QueueItem {
+  position: number;
+  request_id?: string;
+  model?: string;
+  class: string;
+  queued_at: string;
+  waited_ms: number;
+  requested_context?: number;
+  deadline?: string;
+  timeout_ms?: number;
+}
+
+export interface QueueStatusResponse {
+  timestamp: string;
+  waiting: number;
+  oldest_wait_ms: number;
+  by_class: Record<string, number>;
+  by_model: Record<string, number>;
+  items: QueueItem[];
+}
+
 // --- handler_status_endpoints.go --------------------------------------
 
 export interface EndpointSummary {
@@ -107,10 +130,18 @@ export interface EndpointSummary {
   id: string;
   priority: number;
   model_count: number;
+  loaded_models?: LoadedModel[];
   request_count: number;
   min_latency_ms: number;
   max_latency_ms: number;
   active_connections: number;
+}
+
+export interface LoadedModel {
+  name: string;
+  expires_at?: string;
+  size_vram?: number;
+  context_length?: number;
 }
 
 export interface EndpointStatusResponse {
@@ -157,4 +188,36 @@ export interface ModelStatusResponse {
   total_models: number;
   total_families: number;
   total_endpoints: number;
+}
+
+// --- request_history.go ------------------------------------------------
+
+export interface RequestRecord {
+  timestamp: string;
+  request_id: string;
+  client_ip?: string;
+  remote_addr?: string;
+  user_agent?: string;
+  method: string;
+  path: string;
+  model?: string;
+  endpoint?: string;
+  backend?: string;
+  status: number;
+  duration_ms: number;
+  request_bytes: number;
+  response_bytes: number;
+  routing_strategy?: string;
+  routing_decision?: string;
+  routing_reason?: string;
+  admission_class?: string;
+  admission_source?: string;
+  sticky_session?: string;
+  sticky_key_source?: string;
+  state: string;
+}
+
+export interface RequestHistoryResponse {
+  requests: RequestRecord[];
+  capacity: number;
 }

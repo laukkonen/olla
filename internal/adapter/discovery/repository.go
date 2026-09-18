@@ -194,6 +194,9 @@ func (r *StaticEndpointRepository) LoadFromConfig(ctx context.Context, configs [
 			ModelFilter:           cfg.ModelFilter,
 			CheckInterval:         cfg.CheckInterval,
 			CheckTimeout:          cfg.CheckTimeout,
+			MaxLoadedModels:       cfg.MaxLoadedModels,
+			NumParallel:           cfg.NumParallel,
+			ContextLength:         cfg.ContextLength,
 			Status:                domain.StatusUnknown,
 			URLString:             urlString,
 			HealthCheckPathString: healthCheckPath,
@@ -363,6 +366,16 @@ func (r *StaticEndpointRepository) validateEndpointConfig(cfg config.EndpointCon
 	// Priority is guaranteed non-nil here: applyEndpointDefaults always runs before validation.
 	if cfg.Priority != nil && *cfg.Priority < 0 {
 		return fmt.Errorf("priority must be non-negative, got %d", *cfg.Priority)
+	}
+
+	if cfg.MaxLoadedModels < 0 {
+		return fmt.Errorf("max_loaded_models must be non-negative, got %d", cfg.MaxLoadedModels)
+	}
+	if cfg.NumParallel < 0 {
+		return fmt.Errorf("num_parallel must be non-negative, got %d", cfg.NumParallel)
+	}
+	if cfg.ContextLength < 0 {
+		return fmt.Errorf("context_length must be non-negative, got %d", cfg.ContextLength)
 	}
 
 	if cfg.Type != "" {

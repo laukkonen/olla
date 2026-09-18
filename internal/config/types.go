@@ -239,20 +239,59 @@ type StickySessionConfig struct {
 
 // ProxyConfig holds proxy-specific configuration
 type ProxyConfig struct {
-	ProfileFilter         *domain.FilterConfig `yaml:"profile_filter,omitempty"`
-	Engine                string               `yaml:"engine"`
-	LoadBalancer          string               `yaml:"load_balancer"`
-	Profile               string               `yaml:"profile"`
-	StickySessions        StickySessionConfig  `yaml:"sticky_sessions"`
-	ConnectionTimeout     time.Duration        `yaml:"connection_timeout"`
-	ConnectionKeepAlive   time.Duration        `yaml:"connection_keep_alive"`
-	ResponseTimeout       time.Duration        `yaml:"response_timeout"`
-	ReadTimeout           time.Duration        `yaml:"read_timeout"`
-	ResponseHeaderTimeout time.Duration        `yaml:"response_header_timeout"`
-	TLSHandshakeTimeout   time.Duration        `yaml:"tls_handshake_timeout"`
-	RetryBackoff          time.Duration        `yaml:"retry_backoff"` // Deprecated: Use model_registry.routing_strategy instead. TODO: Removal: v0.1.0
-	StreamBufferSize      int                  `yaml:"stream_buffer_size"`
-	MaxRetries            int                  `yaml:"max_retries"` // Deprecated: Use model_registry.routing_strategy instead. TODO: Removal: v0.1.0
+	ProfileFilter *domain.FilterConfig `yaml:"profile_filter,omitempty"`
+	Engine        string               `yaml:"engine"`
+	LoadBalancer  string               `yaml:"load_balancer"`
+	// WarmFirst is read when load_balancer is "warm-first". Other strategies ignore it.
+	WarmFirst      WarmFirstBalancerConfig `yaml:"warm_first"`
+	Profile        string                  `yaml:"profile"`
+	StickySessions StickySessionConfig     `yaml:"sticky_sessions"`
+	// Admission is an optional priority queue in front of the balancer.
+	// Sticky sessions wrap *outside* it so a KV-cache hit never waits.
+	Admission             AdmissionConfig `yaml:"admission"`
+	ConnectionTimeout     time.Duration   `yaml:"connection_timeout"`
+	ConnectionKeepAlive   time.Duration   `yaml:"connection_keep_alive"`
+	ResponseTimeout       time.Duration   `yaml:"response_timeout"`
+	ReadTimeout           time.Duration   `yaml:"read_timeout"`
+	ResponseHeaderTimeout time.Duration   `yaml:"response_header_timeout"`
+	TLSHandshakeTimeout   time.Duration   `yaml:"tls_handshake_timeout"`
+	RetryBackoff          time.Duration   `yaml:"retry_backoff"` // Deprecated: Use model_registry.routing_strategy instead. TODO: Removal: v0.1.0
+	StreamBufferSize      int             `yaml:"stream_buffer_size"`
+	MaxRetries            int             `yaml:"max_retries"` // Deprecated: Use model_registry.routing_strategy instead. TODO: Removal: v0.1.0
+}
+
+// AdmissionConfig is an optional priority-admission queue under proxy.admission.
+// It does not add GPU capacity; it only decides who waits when every eligible
+// worker is already at num_parallel. Header overrides CIDR; unknown header
+// values fall through to CIDR then DefaultClass.
+type AdmissionConfig struct {
+	Enabled      bool                      `yaml:"enabled"`
+	DefaultClass string                    `yaml:"default_class"`
+	Header       string                    `yaml:"header"`
+	WaitTimeout  time.Duration             `yaml:"wait_timeout"`
+	Classes      map[string]AdmissionClass `yaml:"classes"`
+	CIDRs        []AdmissionCIDR           `yaml:"cidrs"`
+}
+
+// AdmissionClass is one named priority band.
+type AdmissionClass struct {
+	Weight int `yaml:"weight"`
+}
+
+// AdmissionCIDR maps a client source network to a class when the request
+// did not send a recognised class header.
+type AdmissionCIDR struct {
+	CIDR  string `yaml:"cidr"`
+	Class string `yaml:"class"`
+}
+
+// WarmFirstBalancerConfig is optional YAML under proxy.warm_first.
+type WarmFirstBalancerConfig struct {
+	// ContextTiebreak is "smallest" (default): among equal rank, pack onto the
+	// smallest context_length that still fits. "priority": skip packing and
+	// use endpoint priority instead. Idle-vs-busy ranking and num_ctx
+	// filtering are unchanged.
+	ContextTiebreak string `yaml:"context_tiebreak"`
 }
 
 // DiscoveryConfig holds service discovery configuration
@@ -312,6 +351,11 @@ type EndpointConfig struct {
 	CheckInterval  time.Duration `yaml:"check_interval"`
 	CheckTimeout   time.Duration `yaml:"check_timeout"`
 	PreservePath   bool          `yaml:"preserve_path"`
+	// Ollama capacity (optional). Zero omits the hint; warm-first then
+	// defaults max_loaded_models/num_parallel to 1 and skips context packing.
+	MaxLoadedModels int `yaml:"max_loaded_models,omitempty"`
+	NumParallel     int `yaml:"num_parallel,omitempty"`
+	ContextLength   int `yaml:"context_length,omitempty"`
 }
 
 // LoggingConfig holds logging configuration

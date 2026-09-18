@@ -260,6 +260,19 @@ func SetStickySessionHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// SetAdmissionHeaders writes the resolved caller class before WriteHeader.
+func SetAdmissionHeaders(w http.ResponseWriter, r *http.Request) {
+	outcome, _ := r.Context().Value(constants.ContextAdmissionOutcomeKey).(*domain.AdmissionOutcome)
+	if outcome == nil || outcome.Class == "" {
+		return
+	}
+	h := w.Header()
+	h.Set(constants.HeaderXOllaClass, outcome.Class)
+	if outcome.Source != "" {
+		h.Set(constants.HeaderXOllaClassSource, outcome.Source)
+	}
+}
+
 // SetResponseHeaders sets common response headers
 func SetResponseHeaders(w http.ResponseWriter, stats *ports.RequestStats, endpoint *domain.Endpoint) {
 	h := w.Header()

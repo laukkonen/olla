@@ -217,6 +217,26 @@ func TestBodyInspector_LargeBodyModelAfterMessages(t *testing.T) {
 	assert.Equal(t, largeBody, string(restored), "full body must be restored after incremental scan")
 }
 
+func TestBodyInspector_OllamaShowNameField(t *testing.T) {
+	ctx := context.Background()
+	logCfg := &logger.Config{Level: "debug", PrettyLogs: false}
+	log, _, err := logger.New(logCfg)
+	require.NoError(t, err)
+	inspector, err := NewBodyInspector(&mockStyledLogger{underlying: log})
+	require.NoError(t, err)
+
+	body := `{"name":"qwen3.8:27b-mxfp8"}`
+	req := &http.Request{
+		Body:          io.NopCloser(strings.NewReader(body)),
+		Header:        make(http.Header),
+		ContentLength: int64(len(body)),
+	}
+	req.Header.Set("Content-Type", "application/json")
+	profile := domain.NewRequestProfile("/api/show")
+	require.NoError(t, inspector.Inspect(ctx, req, profile))
+	assert.Equal(t, "qwen3.8:27b-mxfp8", profile.ModelName)
+}
+
 func TestBodyInspector_NoBody(t *testing.T) {
 	ctx := context.Background()
 	logCfg := &logger.Config{Level: "debug", PrettyLogs: false}
@@ -620,6 +640,24 @@ func BenchmarkBodyInspector_LargeBody(b *testing.B) {
 		inspectErr := inspector.Inspect(ctx, req, profile)
 		if inspectErr != nil {
 			b.Fatal(inspectErr)
+		}
+	}
+}
+
+func TestExtractRequestedContext(t *testing.T) {
+	tests := []struct {
+		body string
+		want int
+	}{
+		{`{"model":"qwen","options":{"num_ctx":8192}}`, 8192},
+		{`{"model":"qwen","num_ctx":4096}`, 4096},
+		{`{"model":"qwen","options":{"num_ctx":8192},"num_ctx":4096}`, 8192},
+		{`{"model":"qwen","messages":[]}`, 0},
+		{`not-json`, 0},
+	}
+	for _, tc := range tests {
+		if got := extractRequestedContext([]byte(tc.body)); got != tc.want {
+			t.Errorf("extractRequestedContext(%s) = %d, want %d", tc.body, got, tc.want)
 		}
 	}
 }

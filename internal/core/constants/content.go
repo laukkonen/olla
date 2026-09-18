@@ -113,4 +113,10 @@ const (
 	HeaderXOllaSessionID       = "X-Olla-Session-ID"        // client-supplied or echoed session identifier
 	HeaderXOllaStickySession   = "X-Olla-Sticky-Session"    // hit | miss | repin | disabled
 	HeaderXOllaStickyKeySource = "X-Olla-Sticky-Key-Source" // session_header | prefix_hash | auth_header | ip | none
+
+	// Admission / caller-class headers. The request header (configurable; this
+	// default) is what clients set; the same name is echoed on the response with
+	// the *resolved* class. Source is header | cidr | default.
+	HeaderXOllaClass       = "X-Olla-Class"
+	HeaderXOllaClassSource = "X-Olla-Class-Source"
 )

@@ -80,6 +80,9 @@ func (p *ollamaParser) Parse(data []byte) ([]*domain.ModelInfo, error) {
 		if ollamaModel.Details != nil || ollamaModel.Digest != nil || ollamaModel.ModifiedAt != nil {
 			modelInfo.Details = createOllamaModelDetails(ollamaModel)
 		}
+		if len(ollamaModel.Capabilities) > 0 {
+			modelInfo.Capabilities = append([]string(nil), ollamaModel.Capabilities...)
+		}
 
 		models = append(models, modelInfo)
 	}

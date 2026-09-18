@@ -284,6 +284,38 @@ func TestLoadFromConfig_ZeroPriorityRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadFromConfig_OllamaCapacityRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	repo := NewStaticEndpointRepository()
+	cfg := config.EndpointConfig{
+		Name:            "cap",
+		URL:             "http://localhost:11434",
+		Type:            "ollama",
+		Priority:        ptrInt(50),
+		CheckInterval:   5 * time.Second,
+		CheckTimeout:    2 * time.Second,
+		MaxLoadedModels: 1,
+		NumParallel:     1,
+		ContextLength:   65536,
+	}
+
+	if err := repo.LoadFromConfig(context.Background(), []config.EndpointConfig{cfg}); err != nil {
+		t.Fatalf("LoadFromConfig failed: %v", err)
+	}
+	endpoints, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll failed: %v", err)
+	}
+	if len(endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(endpoints))
+	}
+	ep := endpoints[0]
+	if ep.MaxLoadedModels != 1 || ep.NumParallel != 1 || ep.ContextLength != 65536 {
+		t.Errorf("capacity = %d/%d/%d, want 1/1/65536", ep.MaxLoadedModels, ep.NumParallel, ep.ContextLength)
+	}
+}
+
 func TestEndpointConfigValidation_WithType(t *testing.T) {
 	testCases := []struct {
 		name      string

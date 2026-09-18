@@ -27,6 +27,8 @@ var DefaultCORSExposedHeaders = []string{
 	constants.HeaderXOllaStickySession,
 	constants.HeaderXOllaStickyKeySource,
 	constants.HeaderXOllaSessionID,
+	constants.HeaderXOllaClass,
+	constants.HeaderXOllaClassSource,
 }
 
 // NewCORS builds an rs/cors handler from Olla's CORS config. It is only constructed

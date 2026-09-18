@@ -244,6 +244,15 @@ func TestInferCapabilitiesFromMetadata(t *testing.T) {
 			},
 			expectedCapabilities: []string{"text-generation", "chat", "completion", "custom-cap1", "custom-cap2"},
 		},
+		{
+			name:      "Ollama native tools capabilities as []string",
+			modelType: "llm",
+			modelName: "qwen3.8:27b-mxfp8",
+			metadata: map[string]interface{}{
+				"capabilities": []string{"completion", "vision", "tools", "thinking"},
+			},
+			expectedCapabilities: []string{"text-generation", "chat", "completion", "vision", "tools", "thinking"},
+		},
 	}
 
 	for _, tt := range tests {

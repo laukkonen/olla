@@ -16,11 +16,21 @@ const (
 	// third-party middleware that might also use "model".
 	ContextModelKey = contextKey("model")
 
+	// ContextNumCtxKey is the request's Ollama options.num_ctx (tokens), when
+	// present. Warm-first uses it to skip endpoints whose context_length is
+	// too small. Zero / missing means the client accepted the server default.
+	ContextNumCtxKey = contextKey("num_ctx")
+
 	// Sticky session context keys — set by the handler before balancer selection
 	// and read back after to surface affinity decisions in response headers.
 	ContextStickyKeyKey       = contextKey("sticky-key")        // computed affinity key for this request
 	ContextStickyKeySourceKey = contextKey("sticky-key-source") // which source produced the key
 	ContextStickyOutcomeKey   = contextKey("sticky-outcome")    // *StickyOutcome written by the wrapper
+
+	// Admission context keys — set by the handler before balancer selection.
+	ContextClientIPKey         = contextKey("client-ip")         // resolved client IP (no proxy trust by default)
+	ContextAdmissionHeaderKey  = contextKey("admission-header")  // raw X-Olla-Class (or configured) value
+	ContextAdmissionOutcomeKey = contextKey("admission-outcome") // *AdmissionOutcome written by the wrapper
 
 	// ContextModelAliasMapKey stores a map[string]string of endpoint URL → actual model name
 	// when a model alias is resolved, allowing the proxy to rewrite the model name in the

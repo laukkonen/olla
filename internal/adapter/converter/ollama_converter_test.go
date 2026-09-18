@@ -39,7 +39,8 @@ func TestOllamaConverter_ConvertToFormat(t *testing.T) {
 			DiskSize:     40000000000,
 			LastSeen:     now,
 			Metadata: map[string]interface{}{
-				"digest": "sha256:abc123def456",
+				"digest":       "sha256:abc123def456",
+				"capabilities": []interface{}{"completion", "tools", "thinking"},
 			},
 		},
 		{
@@ -84,6 +85,7 @@ func TestOllamaConverter_ConvertToFormat(t *testing.T) {
 		assert.Equal(t, now.Format(time.RFC3339), model.ModifiedAt)
 		assert.Equal(t, int64(40000000000), model.Size)
 		assert.Equal(t, "sha256:abc123def456", model.Digest)
+		assert.Equal(t, []string{"completion", "tools", "thinking"}, model.Capabilities)
 
 		// Check details
 		assert.NotNil(t, model.Details)

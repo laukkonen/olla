@@ -807,3 +807,32 @@ func TestEnhancedMetadataConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestOllamaParser_Capabilities(t *testing.T) {
+	profile := getTestProfile(t, domain.ProfileOllama)
+	body := []byte(`{
+		"models": [{
+			"name": "qwen3.8:27b-mxfp8",
+			"size": 1,
+			"digest": "abc",
+			"capabilities": ["completion", "vision", "tools", "thinking"],
+			"details": {"family": "qwen3_5", "format": "safetensors"}
+		}]
+	}`)
+	models, err := profile.ParseModelsResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("got %d models", len(models))
+	}
+	want := []string{"completion", "vision", "tools", "thinking"}
+	if len(models[0].Capabilities) != len(want) {
+		t.Fatalf("capabilities = %v, want %v", models[0].Capabilities, want)
+	}
+	for i, cap := range want {
+		if models[0].Capabilities[i] != cap {
+			t.Errorf("capabilities[%d] = %q, want %q", i, models[0].Capabilities[i], cap)
+		}
+	}
+}

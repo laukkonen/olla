@@ -26,12 +26,13 @@ type ModelDetails struct {
 }
 
 type ModelInfo struct {
-	LastSeen    time.Time     `json:"last_seen"`
-	Details     *ModelDetails `json:"details,omitempty"`
-	Name        string        `json:"name"`
-	Type        string        `json:"type,omitempty"`
-	Description string        `json:"description,omitempty"`
-	Size        int64         `json:"size,omitempty"` // Disk size in bytes
+	LastSeen     time.Time     `json:"last_seen"`
+	Details      *ModelDetails `json:"details,omitempty"`
+	Name         string        `json:"name"`
+	Type         string        `json:"type,omitempty"`
+	Description  string        `json:"description,omitempty"`
+	Size         int64         `json:"size,omitempty"` // Disk size in bytes
+	Capabilities []string      `json:"capabilities,omitempty"`
 }
 
 type EndpointModels struct {

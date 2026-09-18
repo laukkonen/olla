@@ -42,7 +42,7 @@ func makeWrapper(t *testing.T, cfg config.StickySessionConfig) *StickySessionWra
 	t.Helper()
 	inner := NewRoundRobinSelector(nil)
 	// patch IncrementConnections/DecrementConnections to accept nil statsCollector
-	w := NewStickySessionWrapper(inner, cfg)
+	w := NewStickySessionWrapper(inner, cfg, nil)
 	w.Start()
 	t.Cleanup(w.Stop)
 	return w
@@ -136,6 +136,82 @@ func TestStickySessionWrapper_Repin(t *testing.T) {
 
 	assert.NotEqual(t, first.URLString, second.URLString, "repin should select a different backend")
 	assert.Equal(t, "repin", outcome2.Result)
+}
+
+// TestStickySessionWrapper_FallsThroughWhenPinnedAtCapacity verifies that a
+// sticky hit does not queue behind a pinned backend with no free num_parallel
+// slot — it must fall through to the inner selector so an idle peer can help,
+// per warm-first's idle-beats-busy ranking.
+func TestStickySessionWrapper_FallsThroughWhenPinnedAtCapacity(t *testing.T) {
+	t.Parallel()
+
+	collector := NewTestStatsCollector()
+	inner := NewWarmFirstSelector(collector)
+	w := NewStickySessionWrapper(inner, defaultStickyConfig(), collector)
+	w.Start()
+	t.Cleanup(w.Stop)
+
+	ep1 := makeEndpoint("ep1", "http://backend1:8080")
+	ep2 := makeEndpoint("ep2", "http://backend2:8080")
+	endpoints := []*domain.Endpoint{ep1, ep2}
+
+	const stickyKey = "sess-capacity:llama3"
+
+	// First call pins a backend (no model in context — no /api/ps probe).
+	ctx1, _ := injectKey(context.Background(), stickyKey, "session_header")
+	first, err := w.Select(ctx1, endpoints)
+	require.NoError(t, err)
+
+	// Saturate the pinned backend's only num_parallel slot (default 1).
+	w.IncrementConnections(first)
+	t.Cleanup(func() { w.DecrementConnections(first) })
+
+	// Same key, but the pinned backend is now full — must not queue behind it.
+	ctx2, outcome2 := injectKey(context.Background(), stickyKey, "session_header")
+	second, err := w.Select(ctx2, endpoints)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first.URLString, second.URLString, "should repin away from a backend with no free num_parallel slot")
+	assert.Equal(t, "repin", outcome2.Result)
+}
+
+// TestStickySessionWrapper_HitWhenPinnedHasFreeSlot verifies the capacity
+// check does not over-trigger: a pinned backend with room under its
+// num_parallel limit still serves the sticky hit as before.
+func TestStickySessionWrapper_HitWhenPinnedHasFreeSlot(t *testing.T) {
+	t.Parallel()
+
+	collector := NewTestStatsCollector()
+	inner := NewWarmFirstSelector(collector)
+	w := NewStickySessionWrapper(inner, defaultStickyConfig(), collector)
+	w.Start()
+	t.Cleanup(w.Stop)
+
+	ep1 := makeEndpoint("ep1", "http://backend1:8080")
+	ep2 := makeEndpoint("ep2", "http://backend2:8080")
+	endpoints := []*domain.Endpoint{ep1, ep2}
+
+	const stickyKey = "sess-capacity-ok:llama3"
+
+	ctx1, _ := injectKey(context.Background(), stickyKey, "session_header")
+	first, err := w.Select(ctx1, endpoints)
+	require.NoError(t, err)
+
+	// Give the pinned endpoint room for two in-flight requests, then use one.
+	for _, ep := range endpoints {
+		if ep.URLString == first.URLString {
+			ep.NumParallel = 2
+		}
+	}
+	w.IncrementConnections(first)
+	t.Cleanup(func() { w.DecrementConnections(first) })
+
+	ctx2, outcome2 := injectKey(context.Background(), stickyKey, "session_header")
+	second, err := w.Select(ctx2, endpoints)
+	require.NoError(t, err)
+
+	assert.Equal(t, first.URLString, second.URLString, "should stay pinned while a num_parallel slot remains free")
+	assert.Equal(t, "hit", outcome2.Result)
 }
 
 func TestStickySessionWrapper_NoKey(t *testing.T) {
@@ -554,7 +630,7 @@ func TestNewStickySessionWrapper_ZeroTTL_NoPanic(t *testing.T) {
 
 	// Must not panic.
 	inner := NewRoundRobinSelector(nil)
-	w := NewStickySessionWrapper(inner, cfg)
+	w := NewStickySessionWrapper(inner, cfg, nil)
 	w.Start()
 	t.Cleanup(w.Stop)
 

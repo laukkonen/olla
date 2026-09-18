@@ -448,6 +448,13 @@ func (u *DefaultUnifier) applyModelInfo(model *Model, info *domain.ModelInfo) {
 	if !info.LastSeen.IsZero() {
 		model.Metadata["last_seen"] = info.LastSeen.Format(time.RFC3339)
 	}
+	if len(info.Capabilities) > 0 {
+		caps := make([]interface{}, len(info.Capabilities))
+		for i, cap := range info.Capabilities {
+			caps[i] = cap
+		}
+		model.Metadata["capabilities"] = caps
+	}
 }
 
 func (u *DefaultUnifier) UnifyModel(ctx context.Context, sourceModel *domain.ModelInfo, endpoint *domain.Endpoint) (*domain.UnifiedModel, error) {

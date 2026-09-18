@@ -200,11 +200,18 @@ func TestGetModelsByCapability(t *testing.T) {
 		Capabilities: []string{"chat", "code", "function_calling"},
 	}
 
+	toolsModel := &domain.UnifiedModel{
+		ID:           "tools-model",
+		Family:       "test",
+		Capabilities: []string{"completion", "tools", "thinking"},
+	}
+
 	// Store models directly in globalUnified for testing
 	registry.globalUnified.Store(chatModel.ID, chatModel)
 	registry.globalUnified.Store(embeddingModel.ID, embeddingModel)
 	registry.globalUnified.Store(visionModel.ID, visionModel)
 	registry.globalUnified.Store(codeModel.ID, codeModel)
+	registry.globalUnified.Store(toolsModel.ID, toolsModel)
 
 	// Test cases
 	tests := []struct {
@@ -238,9 +245,14 @@ func TestGetModelsByCapability(t *testing.T) {
 			expectedIDs: []string{"code-model"},
 		},
 		{
-			name:        "Function calling capability",
-			capability:  "function",
-			expectedIDs: []string{"code-model"},
+			name:        "Function calling via Ollama tools tag",
+			capability:  "function_calling",
+			expectedIDs: []string{"code-model", "tools-model"},
+		},
+		{
+			name:        "Ollama tools capability",
+			capability:  "tools",
+			expectedIDs: []string{"code-model", "tools-model"},
 		},
 		{
 			name:        "Streaming capability",

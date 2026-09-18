@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/thushan/olla/internal/adapter/balancer"
 	"github.com/thushan/olla/internal/adapter/translator"
 	"github.com/thushan/olla/internal/core/constants"
 	"github.com/thushan/olla/internal/core/domain"
@@ -503,6 +504,11 @@ func (a *Application) prepareProxyContext(ctx context.Context, r *http.Request, 
 		r = r.WithContext(ctx)
 	}
 
+	if pr.profile != nil && pr.profile.RequestedContext > 0 {
+		ctx = context.WithValue(ctx, constants.ContextNumCtxKey, pr.profile.RequestedContext)
+		r = r.WithContext(ctx)
+	}
+
 	if pr.profile != nil && pr.profile.RoutingDecision != nil {
 		pr.stats.RoutingDecision = pr.profile.RoutingDecision
 	}
@@ -518,7 +524,29 @@ func (a *Application) prepareProxyContext(ctx context.Context, r *http.Request, 
 		}
 	}
 
+	if a.Config != nil && a.Config.Proxy.Admission.Enabled {
+		ctx, r = a.injectAdmission(ctx, r, pr)
+	}
+
 	return ctx, r
+}
+
+// injectAdmission puts the client IP, class header, and an outcome pointer into
+// context so the admission wrapper (and sticky-skipped requests) can classify
+// the caller. Prefills Class/Source so a sticky hit still logs the class.
+func (a *Application) injectAdmission(ctx context.Context, r *http.Request, pr *proxyRequest) (context.Context, *http.Request) {
+	cfg := a.Config.Proxy.Admission
+	headerName := cfg.Header
+	if headerName == "" {
+		headerName = constants.HeaderXOllaClass
+	}
+	headerVal := r.Header.Get(headerName)
+	class, source, _ := balancer.ResolveAdmissionClass(pr.clientIP, headerVal, cfg)
+	outcome := &domain.AdmissionOutcome{Class: class, Source: source}
+	ctx = context.WithValue(ctx, constants.ContextClientIPKey, pr.clientIP)
+	ctx = context.WithValue(ctx, constants.ContextAdmissionHeaderKey, headerVal)
+	ctx = context.WithValue(ctx, constants.ContextAdmissionOutcomeKey, outcome)
+	return ctx, r.WithContext(ctx)
 }
 
 // handleNonStreamingBackendError processes backend errors and writes translated error response
@@ -1026,6 +1054,11 @@ func (a *Application) copyOllaHeaders(from headerGetter, to http.ResponseWriter)
 		constants.HeaderXOllaRoutingStrategy,
 		constants.HeaderXOllaRoutingDecision,
 		constants.HeaderXOllaRoutingReason,
+		constants.HeaderXOllaStickySession,
+		constants.HeaderXOllaStickyKeySource,
+		constants.HeaderXOllaSessionID,
+		constants.HeaderXOllaClass,
+		constants.HeaderXOllaClassSource,
 	}
 
 	for _, header := range ollaHeaders {

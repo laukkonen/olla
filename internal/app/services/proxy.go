@@ -33,6 +33,7 @@ type ProxyServiceWrapper struct {
 	// stickyWrapper is non-nil when sticky sessions are enabled; held separately
 	// so Stop() can shut down its background goroutine.
 	stickyWrapper    *balancer.StickySessionWrapper
+	admissionWrapper *balancer.AdmissionWrapper
 	endpointRepo     domain.EndpointRepository
 	discoveryService ports.DiscoveryService
 	statsCollector   ports.StatsCollector
@@ -86,14 +87,17 @@ func (s *ProxyServiceWrapper) Start(ctx context.Context) error {
 	}
 
 	// Create load balancer
-	balancerFactory := balancer.NewFactory(s.statsCollector)
+	balancerFactory := balancer.NewFactoryWithOptions(s.statsCollector, s.config.WarmFirst.ContextTiebreak)
 	var err error
 	s.loadBalancer, err = balancerFactory.Create(s.config.LoadBalancer)
 	if err != nil {
 		return fmt.Errorf("failed to create load balancer: %w", err)
 	}
-	s.logger.Info("Load balancer created", "type", s.config.LoadBalancer)
+	s.logger.Info("Load balancer created",
+		"type", s.config.LoadBalancer,
+		"context_tiebreak", s.config.WarmFirst.ContextTiebreak)
 
+	s.applyAdmission()
 	s.applyStickySessions()
 
 	// Create proxy configuration
@@ -283,6 +287,31 @@ func (s *ProxyServiceWrapper) SetSecurityService(securityService *SecurityServic
 	s.securityService = securityService
 }
 
+// applyAdmission wraps the current load balancer with a priority admission queue
+// when enabled. Must run before applyStickySessions so the wrap order is
+// sticky(admission(inner)) — a KV-cache hit never waits in the queue.
+func (s *ProxyServiceWrapper) applyAdmission() {
+	if !s.config.Admission.Enabled {
+		return
+	}
+	s.admissionWrapper = balancer.NewAdmissionWrapper(s.loadBalancer, s.statsCollector, s.config.Admission)
+	s.loadBalancer = s.admissionWrapper
+	s.logger.Info("Admission queue enabled",
+		"default_class", s.config.Admission.DefaultClass,
+		"header", s.config.Admission.Header,
+		"classes", len(s.config.Admission.Classes),
+		"cidrs", len(s.config.Admission.CIDRs),
+		"wait_timeout", s.config.Admission.WaitTimeout)
+}
+
+// QueueSnapshot returns the admission queue view, or an empty view when disabled.
+func (s *ProxyServiceWrapper) QueueSnapshot() balancer.QueueSnapshot {
+	if s.admissionWrapper == nil {
+		return balancer.QueueSnapshot{ByClass: map[string]int{}, ByModel: map[string]int{}, Items: []balancer.QueueItem{}}
+	}
+	return s.admissionWrapper.QueueSnapshot()
+}
+
 // applyStickySessions wraps the current load balancer with KV-cache affinity routing
 // when sticky sessions are enabled. It also wires the purge function into the discovery
 // service immediately after the wrapper is assigned, ensuring the write of stickyWrapper
@@ -291,7 +320,7 @@ func (s *ProxyServiceWrapper) applyStickySessions() {
 	if !s.config.StickySessions.Enabled {
 		return
 	}
-	sw := balancer.NewStickySessionWrapper(s.loadBalancer, s.config.StickySessions)
+	sw := balancer.NewStickySessionWrapper(s.loadBalancer, s.config.StickySessions, s.statsCollector)
 	sw.Start()
 	s.stickyWrapper = sw
 	s.loadBalancer = sw

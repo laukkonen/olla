@@ -29,15 +29,11 @@ func (a *Application) ollamaModelsHandler(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(response)
 }
 
-// ollamaModelShowHandler handles model detail requests.
-// endpoint: POST /olla/ollama/api/show
-//
-// aggregating model details across instances presents challenges:
-// - modelfiles may differ between instances
-// - version conflicts need resolution
-// - parameter reconciliation is non-trivial
+// ollamaModelShowHandler proxies POST /olla/ollama/api/show to the Ollama
+// node that has the requested model, returning the native JSON (capabilities,
+// template, parameters). Ollama accepts {"model": "..."} or {"name": "..."}.
 func (a *Application) ollamaModelShowHandler(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "model show not supported in multi-instance proxy", http.StatusNotImplemented)
+	a.providerProxyHandler(w, r)
 }
 
 // ollamaRunningModelsHandler returns currently loaded/running models.

@@ -36,10 +36,11 @@ type EndpointSummary struct {
 	// unchanged. Siblings that share a sanitised form get a positional
 	// disambiguator assigned by sorted (secret-independent) sibling order.
 	// See buildEndpointIDs and stableEndpointID.
-	ID           string `json:"id"`
-	Priority     int    `json:"priority"`
-	ModelCount   int    `json:"model_count"`
-	RequestCount int64  `json:"request_count"`
+	ID           string        `json:"id"`
+	Priority     int           `json:"priority"`
+	ModelCount   int           `json:"model_count"`
+	LoadedModels []LoadedModel `json:"loaded_models"`
+	RequestCount int64         `json:"request_count"`
 	// Additive dashboard fields, existing fields above are unchanged.
 	// min/max latency follow the same plain-zero convention as RequestCount
 	// for no-traffic endpoints; avg_latency_ms is a pointer so a no-traffic
@@ -77,6 +78,10 @@ func (a *Application) endpointsStatusHandler(w http.ResponseWriter, r *http.Requ
 	endpointStats := a.statsCollector.GetEndpointStats()
 	connectionStats := a.statsCollector.GetConnectionStats()
 	modelMap, _ := a.modelRegistry.GetEndpointModelMap(ctx)
+	loadedMap := map[string][]LoadedModel{}
+	if a.residency != nil {
+		loadedMap = a.residency.refresh(ctx, allEndpoints)
+	}
 	// IDs are derived once from the full endpoint set so siblings that share
 	// a sanitised URL get deterministic positional disambiguators, and every
 	// payload (status/endpoints, status, status/models) sees the same ID for
@@ -86,6 +91,10 @@ func (a *Application) endpointsStatusHandler(w http.ResponseWriter, r *http.Requ
 
 	for _, endpoint := range allEndpoints {
 		summary := a.buildEndpointSummaryOptimised(endpoint, endpointStats, connectionStats, modelMap, endpointIDs[endpoint.URLString])
+		summary.LoadedModels = loadedMap[endpoint.URLString]
+		if summary.LoadedModels == nil {
+			summary.LoadedModels = []LoadedModel{}
+		}
 		summaries = append(summaries, summary)
 	}
 
@@ -354,6 +363,12 @@ func hashEndpointSummary(h hash.Hash, s *EndpointSummary) {
 	hashEtagString(h, s.Issues)
 	hashEtagInt64(h, int64(s.Priority))
 	hashEtagInt64(h, int64(s.ModelCount))
+	for _, model := range s.LoadedModels {
+		hashEtagString(h, model.Name)
+		hashEtagString(h, model.ExpiresAt.String())
+		hashEtagInt64(h, model.SizeVRAM)
+		hashEtagInt64(h, int64(model.ContextLength))
+	}
 	hashEtagInt64(h, s.RequestCount)
 	hashEtagInt64(h, s.MinLatencyMs)
 	hashEtagInt64(h, s.MaxLatencyMs)

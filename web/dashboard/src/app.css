@@ -80,6 +80,14 @@
   --transition-fast: 120ms ease;
 }
 
+.request-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.request-toolbar label { display: flex; align-items: center; gap: var(--space-2); color: var(--text-dim); }
+.request-toolbar input { min-width: 18rem; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); padding: .4rem .6rem; font: inherit; }
+.request-limitations { margin-bottom: var(--space-3); }
+.request-failed { color: var(--red); }
+.request-table code { font-size: .8em; }
+@media (max-width: 700px) { .request-toolbar { align-items: stretch; flex-direction: column; } .request-toolbar input { min-width: 0; width: 100%; } }
+
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;

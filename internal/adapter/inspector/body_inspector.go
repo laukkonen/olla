@@ -33,6 +33,7 @@ const (
 
 type modelRequest struct {
 	Model string `json:"model"`
+	Name  string `json:"name"`
 }
 
 // BodyInspector extracts model names from request bodies
@@ -143,6 +144,10 @@ func (bi *BodyInspector) Inspect(ctx context.Context, r *http.Request, profile *
 		bi.logger.Debug("Extracted model name from request body", "model", modelName)
 	}
 
+	if n := extractRequestedContext(buffer.Bytes()); n > 0 {
+		profile.RequestedContext = n
+	}
+
 	// Detect required capabilities from the request
 	capabilities := bi.detectRequiredCapabilities(buffer.Bytes())
 	if capabilities != nil {
@@ -169,8 +174,13 @@ func (bi *BodyInspector) extractModelName(body []byte) string {
 
 	// Fast path: complete JSON - unmarshal directly.
 	var req modelRequest
-	if err := json.Unmarshal(body, &req); err == nil && req.Model != "" {
-		return bi.normalizeModelName(req.Model)
+	if err := json.Unmarshal(body, &req); err == nil {
+		if req.Model != "" {
+			return bi.normalizeModelName(req.Model)
+		}
+		if req.Name != "" {
+			return bi.normalizeModelName(req.Name)
+		}
 	}
 
 	// Streaming path: works on both complete and truncated JSON (e.g. a 64 KB prefix of a
@@ -187,10 +197,17 @@ func (bi *BodyInspector) extractModelName(body []byte) string {
 		return ""
 	}
 
-	for key, value := range data {
-		if strings.EqualFold(key, "model") {
+	for _, key := range []string{"model", "name"} {
+		if value, ok := data[key]; ok {
 			if modelStr, ok := value.(string); ok && modelStr != "" {
 				return bi.normalizeModelName(modelStr)
+			}
+		}
+		for k, value := range data {
+			if strings.EqualFold(k, key) {
+				if modelStr, ok := value.(string); ok && modelStr != "" {
+					return bi.normalizeModelName(modelStr)
+				}
 			}
 		}
 	}
@@ -205,6 +222,30 @@ func (bi *BodyInspector) extractModelName(body []byte) string {
 	}
 
 	return ""
+}
+
+// extractRequestedContext reads Ollama num_ctx from a complete JSON body.
+// options.num_ctx wins over a top-level num_ctx. Returns 0 if absent or invalid.
+func extractRequestedContext(body []byte) int {
+	if len(body) == 0 {
+		return 0
+	}
+	var hint struct {
+		NumCtx  int `json:"num_ctx"`
+		Options struct {
+			NumCtx int `json:"num_ctx"`
+		} `json:"options"`
+	}
+	if err := json.Unmarshal(body, &hint); err != nil {
+		return 0
+	}
+	if hint.Options.NumCtx > 0 {
+		return hint.Options.NumCtx
+	}
+	if hint.NumCtx > 0 {
+		return hint.NumCtx
+	}
+	return 0
 }
 
 // extractTopLevelModelFieldFromReader scans JSON from r (which may be a truncated stream)

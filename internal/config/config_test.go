@@ -1117,6 +1117,42 @@ func TestConfigValidate_RejectsEmptyFields(t *testing.T) {
 			errContains: "proxy.load_balancer",
 		},
 		{
+			name:        "invalid warm_first.context_tiebreak",
+			modify:      func(c *Config) { c.Proxy.WarmFirst.ContextTiebreak = "largest" },
+			errContains: "context_tiebreak",
+		},
+		{
+			name: "admission enabled without classes",
+			modify: func(c *Config) {
+				c.Proxy.Admission.Enabled = true
+				c.Proxy.Admission.DefaultClass = "batch"
+			},
+			errContains: "admission.classes",
+		},
+		{
+			name: "admission default_class missing",
+			modify: func(c *Config) {
+				c.Proxy.Admission = AdmissionConfig{
+					Enabled:      true,
+					DefaultClass: "interactive",
+					Classes:      map[string]AdmissionClass{"batch": {Weight: 1}},
+				}
+			},
+			errContains: "default_class",
+		},
+		{
+			name: "admission invalid cidr",
+			modify: func(c *Config) {
+				c.Proxy.Admission = AdmissionConfig{
+					Enabled:      true,
+					DefaultClass: "batch",
+					Classes:      map[string]AdmissionClass{"batch": {Weight: 1}},
+					CIDRs:        []AdmissionCIDR{{CIDR: "not-a-cidr", Class: "batch"}},
+				}
+			},
+			errContains: "cidr",
+		},
+		{
 			name:        "server.port zero",
 			modify:      func(c *Config) { c.Server.Port = 0 },
 			errContains: "server.port",

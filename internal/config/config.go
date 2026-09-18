@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -191,6 +192,19 @@ func (c *Config) Validate() error {
 	if c.Proxy.LoadBalancer == "" {
 		return errors.New("proxy.load_balancer must not be empty (e.g. \"priority\")")
 	}
+	switch tb := strings.ToLower(strings.TrimSpace(c.Proxy.WarmFirst.ContextTiebreak)); tb {
+	case "", "smallest", "priority":
+		if tb == "" {
+			c.Proxy.WarmFirst.ContextTiebreak = "smallest"
+		} else {
+			c.Proxy.WarmFirst.ContextTiebreak = tb
+		}
+	default:
+		return fmt.Errorf("proxy.warm_first.context_tiebreak must be \"smallest\" or \"priority\", got %q", c.Proxy.WarmFirst.ContextTiebreak)
+	}
+	if err := c.Proxy.Admission.Validate(); err != nil {
+		return err
+	}
 	if c.Server.Port <= 0 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be between 1 and 65535, got %d", c.Server.Port)
 	}
@@ -226,6 +240,59 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	return nil
+}
+
+// Validate normalises class names and rejects a enabled-but-unusable admission
+// config. Disabled admission is always valid so stock YAML stays untouched.
+func (c *AdmissionConfig) Validate() error {
+	if c == nil || !c.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(c.Header) == "" {
+		c.Header = constants.HeaderXOllaClass
+	}
+	if len(c.Classes) == 0 {
+		return errors.New("proxy.admission.classes must not be empty when admission is enabled")
+	}
+	normalized := make(map[string]AdmissionClass, len(c.Classes))
+	for name, class := range c.Classes {
+		n := strings.ToLower(strings.TrimSpace(name))
+		if n == "" {
+			return errors.New("proxy.admission.classes has an empty name")
+		}
+		if class.Weight < 1 {
+			return fmt.Errorf("proxy.admission.classes.%s.weight must be >= 1, got %d", n, class.Weight)
+		}
+		normalized[n] = class
+	}
+	c.Classes = normalized
+	def := strings.ToLower(strings.TrimSpace(c.DefaultClass))
+	if def == "" {
+		return errors.New("proxy.admission.default_class must not be empty when admission is enabled")
+	}
+	if _, ok := c.Classes[def]; !ok {
+		return fmt.Errorf("proxy.admission.default_class %q is not a defined class", c.DefaultClass)
+	}
+	c.DefaultClass = def
+	if c.WaitTimeout < 0 {
+		return errors.New("proxy.admission.wait_timeout must be >= 0")
+	}
+	for i, entry := range c.CIDRs {
+		cidr := strings.TrimSpace(entry.CIDR)
+		class := strings.ToLower(strings.TrimSpace(entry.Class))
+		if cidr == "" {
+			return fmt.Errorf("proxy.admission.cidrs[%d].cidr must not be empty", i)
+		}
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("proxy.admission.cidrs[%d].cidr %q is invalid: %w", i, cidr, err)
+		}
+		if _, ok := c.Classes[class]; !ok {
+			return fmt.Errorf("proxy.admission.cidrs[%d].class %q is not a defined class", i, entry.Class)
+		}
+		c.CIDRs[i].CIDR = cidr
+		c.CIDRs[i].Class = class
+	}
 	return nil
 }
 

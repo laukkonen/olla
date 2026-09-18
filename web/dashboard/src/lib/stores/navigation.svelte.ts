@@ -10,7 +10,7 @@
 // switching - that stays with NavTabs and the router (including App's
 // boot-time hash restore).
 
-export const SECTIONS = Object.freeze(['overview', 'endpoints', 'models'] as const);
+export const SECTIONS = Object.freeze(['overview', 'endpoints', 'models', 'queue', 'requests'] as const);
 export type Section = (typeof SECTIONS)[number];
 
 class NavigationStore {

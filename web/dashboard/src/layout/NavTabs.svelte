@@ -7,7 +7,7 @@
   import { navigation, type Section } from '../lib/stores/navigation.svelte';
   import { navigatePanel } from '../lib/router';
 
-  const LABELS: Record<Section, string> = { overview: 'Overview', endpoints: 'Endpoints', models: 'Models' };
+  const LABELS: Record<Section, string> = { overview: 'Overview', endpoints: 'Endpoints', models: 'Models', queue: 'Queue', requests: 'Requests' };
 
   function activate(name: Section): void {
     navigatePanel(name);

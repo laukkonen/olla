@@ -44,11 +44,17 @@ type Endpoint struct {
 	AuthHeaderName string `json:"-"`
 	// AuthHeaderValue is the fully composed header value (e.g. "Bearer tok", "Basic base64(...)").
 	// Never serialised; leaking credentials through logs or status endpoints would be a security issue.
-	AuthHeaderValue     string `json:"-"`
-	LastLatency         time.Duration
-	CheckInterval       time.Duration
-	CheckTimeout        time.Duration
-	Priority            int
+	AuthHeaderValue string `json:"-"`
+	LastLatency     time.Duration
+	CheckInterval   time.Duration
+	CheckTimeout    time.Duration
+	Priority        int
+	// MaxLoadedModels, NumParallel, and ContextLength are optional Ollama
+	// capacity hints for warm-first. Zero means "use selector defaults"
+	// (max loaded = 1, parallel slots = 1, context window unknown).
+	MaxLoadedModels     int
+	NumParallel         int
+	ContextLength       int
 	ConsecutiveFailures int
 	BackoffMultiplier   int
 	PreservePath        bool

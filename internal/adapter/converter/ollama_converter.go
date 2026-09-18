@@ -15,12 +15,13 @@ type OllamaModelResponse struct {
 
 // OllamaModelData represents a single model in Ollama format
 type OllamaModelData struct {
-	Details    *OllamaDetails `json:"details,omitempty"`
-	Name       string         `json:"name"`
-	Model      string         `json:"model"`
-	ModifiedAt string         `json:"modified_at"`
-	Digest     string         `json:"digest"`
-	Size       int64          `json:"size"`
+	Details      *OllamaDetails `json:"details,omitempty"`
+	Name         string         `json:"name"`
+	Model        string         `json:"model"`
+	ModifiedAt   string         `json:"modified_at"`
+	Digest       string         `json:"digest"`
+	Size         int64          `json:"size"`
+	Capabilities []string       `json:"capabilities,omitempty"`
 }
 
 // OllamaDetails represents model details in Ollama format
@@ -71,17 +72,54 @@ func (c *OllamaConverter) convertModel(model *domain.UnifiedModel) *OllamaModelD
 	}
 
 	return &OllamaModelData{
-		Name:       helper.Alias,
-		Model:      helper.Alias,
-		ModifiedAt: model.LastSeen.Format(time.RFC3339),
-		Size:       helper.GetDiskSize(),
-		Digest:     helper.GetMetadataString("digest"),
+		Name:         helper.Alias,
+		Model:        helper.Alias,
+		ModifiedAt:   model.LastSeen.Format(time.RFC3339),
+		Size:         helper.GetDiskSize(),
+		Digest:       helper.GetMetadataString("digest"),
+		Capabilities: ollamaCapabilities(model),
 		Details: &OllamaDetails{
 			Family:            model.Family,
 			ParameterSize:     model.ParameterSize,
 			QuantizationLevel: denormalizeQuantization(model.Quantization),
 		},
 	}
+}
+
+// ollamaCapabilities prefers the backend's native /api/tags list (tools,
+// thinking, completion, vision, embedding) over inferred unifier labels.
+func ollamaCapabilities(model *domain.UnifiedModel) []string {
+	if model == nil {
+		return nil
+	}
+	if model.Metadata != nil {
+		if caps := stringSliceFromMetadata(model.Metadata["capabilities"]); len(caps) > 0 {
+			return caps
+		}
+	}
+	return nil
+}
+
+func stringSliceFromMetadata(raw interface{}) []string {
+	switch v := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, s := range v {
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // denormalizeQuantization converts normalized quantization back to Ollama format

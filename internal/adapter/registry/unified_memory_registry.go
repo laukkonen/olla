@@ -445,10 +445,10 @@ func capabilityMatches(modelCap, requestedCap string) bool {
 		return modelCap == "embeddings" || modelCap == "embedding"
 	case "vision", "vision_understanding":
 		return modelCap == "vision" || modelCap == "vision_understanding" || modelCap == "image"
-	case capabilityCode, "code_generation":
-		return modelCap == capabilityCode || modelCap == "code_generation"
-	case "function", "function_calling":
-		return modelCap == "function" || modelCap == "function_calling" || modelCap == "tools"
+	case capabilityCode, "code_generation", "code-generation":
+		return modelCap == capabilityCode || modelCap == "code_generation" || modelCap == "code-generation" || modelCap == "programming"
+	case "function", "function_calling", "tools", "tool_use":
+		return modelCap == "function" || modelCap == "function_calling" || modelCap == "tools" || modelCap == "tool_use"
 	case "streaming", "stream":
 		return modelCap == "streaming" || modelCap == "stream"
 	}

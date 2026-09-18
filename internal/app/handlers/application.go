@@ -27,6 +27,7 @@ type SecurityAdapters struct {
 	securityChain    *ports.SecurityChain
 	securityAdapters *security.Adapters // nil when security is not configured
 	logger           logger.StyledLogger
+	history          func(http.Handler) http.Handler
 }
 
 // CreateChainMiddleware creates middleware that applies the full security chain with enhanced logging.
@@ -37,7 +38,11 @@ func (s *SecurityAdapters) CreateChainMiddleware() func(http.Handler) http.Handl
 	return func(next http.Handler) http.Handler {
 		// Wrap with logging so every proxy request is recorded regardless of which
 		// security path runs below.
-		withAccessLogging := middleware.CombinedLoggingMiddleware(s.logger)(next)
+		logged := next
+		if s.history != nil {
+			logged = s.history(logged)
+		}
+		withAccessLogging := middleware.CombinedLoggingMiddleware(s.logger)(logged)
 
 		if s.securityAdapters != nil {
 			// Delegate to the concrete adapter chain. It sets the correct status codes
@@ -78,7 +83,12 @@ func (s *SecurityAdapters) CreateChainMiddleware() func(http.Handler) http.Handl
 func (s *SecurityAdapters) CreateRateLimitMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		// Apply enhanced logging for non-proxy routes as well
-		return middleware.CombinedLoggingMiddleware(s.logger)(next)
+		logged := next
+		if s.history != nil {
+			logged = s.history(logged)
+		}
+		h := middleware.CombinedLoggingMiddleware(s.logger)(logged)
+		return h
 	}
 }
 
@@ -110,11 +120,14 @@ type Application struct {
 	translatorRegistry *translator.Registry
 	// stickyStatsFn is non-nil when sticky sessions are enabled. Stored as a
 	// closure so the handler layer does not need to import the balancer package.
-	stickyStatsFn func() *balancer.StickyStats
-	aliasResolver *registry.AliasResolver
-	server        *http.Server
-	errCh         chan error
-	StartTime     time.Time
+	stickyStatsFn   func() *balancer.StickyStats
+	queueSnapshotFn func() balancer.QueueSnapshot
+	aliasResolver   *registry.AliasResolver
+	server          *http.Server
+	errCh           chan error
+	StartTime       time.Time
+	residency       *ollamaResidency
+	requestHistory  *requestHistory
 }
 
 // NewApplication creates a new Application instance with all required dependencies
@@ -202,7 +215,7 @@ func NewApplication(
 	// The Factory.GetAnthropicSupport method provides the required functionality
 	profileLookup := profileFactory
 
-	return &Application{
+	app := &Application{
 		Config:             cfg,
 		logger:             logger,
 		proxyService:       proxyService,
@@ -221,7 +234,11 @@ func NewApplication(
 		server:             server,
 		errCh:              make(chan error, 1),
 		StartTime:          time.Now(),
-	}, nil
+		residency:          newOllamaResidency(),
+	}
+	app.requestHistory = newRequestHistory()
+	securityAdapters.history = app.requestHistoryMiddleware
+	return app, nil
 }
 
 // GetRouteRegistry returns the route registry for wiring up routes
@@ -253,6 +270,11 @@ func (a *Application) GetProfileLookup() translator.ProfileLookup {
 // Called by HTTPService when sticky sessions are enabled.
 func (a *Application) SetStickyStatsFn(fn func() *balancer.StickyStats) {
 	a.stickyStatsFn = fn
+}
+
+// SetQueueSnapshotFn wires the read-only admission queue view from the proxy service.
+func (a *Application) SetQueueSnapshotFn(fn func() balancer.QueueSnapshot) {
+	a.queueSnapshotFn = fn
 }
 
 // SetSecurityAdapters wires the real security.Adapters into the handlers-layer
