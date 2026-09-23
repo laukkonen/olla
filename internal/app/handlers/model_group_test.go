@@ -50,7 +50,7 @@ func TestResolveModelGroupUsesClassifierForPlainText(t *testing.T) {
 	}
 }
 
-func TestResolveModelGroupUsesCapableForToolRequest(t *testing.T) {
+func TestResolveModelGroupClassifiesToolRequest(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -67,32 +67,12 @@ func TestResolveModelGroupUsesCapableForToolRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"qwen3.5:auto","tools":[{}],"messages":[{"content":"Use a tool"}]}`))
 	profile := domain.NewRequestProfile(req.URL.Path)
 	profile.ModelName = "qwen3.5:auto"
-	profile.RequiresFunctionCall = true
 	pr := &proxyRequest{model: "qwen3.5:auto", profile: profile, stats: &ports.RequestStats{}}
 
 	app.resolveModelGroup(context.Background(), req, pr)
 
-	if called || pr.model != "qwen3.5:9b-mlx" || pr.modelGroupSource != "rule" || pr.modelGroupReason != "function_call" {
-		t.Fatalf("tool request must bypass classifier, got called=%t model=%q source=%q reason=%q", called, pr.model, pr.modelGroupSource, pr.modelGroupReason)
-	}
-}
-
-func TestResolveModelGroupLabelsToolInputWithoutProfile(t *testing.T) {
-	app := &Application{Config: &config.Config{ModelGroups: map[string]config.ModelGroupConfig{
-		"qwen3.5:auto": {
-			FastModel: "qwen3.5:4b-mlx", CapableModel: "qwen3.5:9b-mlx",
-			Classifier: config.ModelGroupClassifierConfig{URL: "http://127.0.0.1:1"},
-		},
-	}}}
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"qwen3.5:auto","tools":[{}],"messages":[{"content":"Use a tool"}]}`))
-	profile := domain.NewRequestProfile(req.URL.Path)
-	profile.ModelName = "qwen3.5:auto"
-	pr := &proxyRequest{model: "qwen3.5:auto", profile: profile, stats: &ports.RequestStats{}}
-
-	app.resolveModelGroup(context.Background(), req, pr)
-
-	if pr.modelGroupSource != "rule" || pr.modelGroupReason != "tool_input" {
-		t.Fatalf("tool input must be labeled, got source=%q reason=%q", pr.modelGroupSource, pr.modelGroupReason)
+	if !called || pr.model != "qwen3.5:4b-mlx" || pr.modelGroupSource != "classifier" || pr.modelGroupReason != "classifier_selected" {
+		t.Fatalf("tool-capable request must be classified, got called=%t model=%q source=%q reason=%q", called, pr.model, pr.modelGroupSource, pr.modelGroupReason)
 	}
 }
 

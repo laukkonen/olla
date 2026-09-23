@@ -86,9 +86,6 @@ func modelGroupCapableReason(pr *proxyRequest) string {
 	if pr.profile.RequiresVision {
 		return "vision"
 	}
-	if pr.profile.RequiresFunctionCall {
-		return "function_call"
-	}
 	if pr.profile.RequestedContext > 32768 {
 		return "long_context"
 	}
@@ -121,9 +118,6 @@ func modelGroupText(r *http.Request, maxBytes int) (string, string) {
 	}
 	if json.Unmarshal(body, &request) != nil {
 		return "", "invalid_request"
-	}
-	if len(request.Tools) > 0 || len(request.Functions) > 0 {
-		return "", "tool_input"
 	}
 
 	parts := make([]string, 0, len(request.Messages)+1)
