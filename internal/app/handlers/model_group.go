@@ -8,12 +8,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/thushan/olla/internal/adapter/proxy/core"
 	"github.com/thushan/olla/internal/config"
 )
 
-const defaultModelGroupTextBytes = 8192
+const (
+	defaultModelGroupTextBytes    = 8192
+	maxModelGroupRequestBodyBytes = 1 << 20
+)
 
 type modelGroupClassifierRequest struct {
 	Group string `json:"group"`
@@ -23,6 +27,13 @@ type modelGroupClassifierRequest struct {
 type modelGroupClassifierResponse struct {
 	Member     string  `json:"member"`
 	Confidence float64 `json:"confidence"`
+}
+
+type modelGroupClassifierResult struct {
+	member     string
+	confidence float64
+	latency    time.Duration
+	reason     string
 }
 
 // resolveModelGroup only handles an explicitly requested group. It never
@@ -37,20 +48,29 @@ func (a *Application) resolveModelGroup(ctx context.Context, r *http.Request, pr
 		return
 	}
 
-	member, source := group.CapableModel, "fallback"
-	if !modelGroupRequiresCapable(pr) && group.Classifier.URL != "" {
-		if text, eligible := modelGroupText(r, group.Classifier.MaxTextBytes); eligible {
-			if choice, ok := classifyModelGroup(ctx, group, pr.model, text); ok {
-				member, source = choice, "classifier"
+	member, source, reason := group.CapableModel, "fallback", "classifier_not_configured"
+	if capableReason := modelGroupCapableReason(pr); capableReason != "" {
+		source, reason = "rule", capableReason
+	} else if group.Classifier.URL != "" {
+		if text, inputReason := modelGroupText(r, group.Classifier.MaxTextBytes); inputReason == "" {
+			result := classifyModelGroup(ctx, group, pr.model, text)
+			pr.modelGroupClassifierAttempted = true
+			pr.modelGroupClassifierConfidence = result.confidence
+			pr.modelGroupClassifierLatency = result.latency
+			if result.member != "" {
+				member, source, reason = result.member, "classifier", result.reason
+			} else {
+				reason = result.reason
 			}
 		} else {
-			source = "rule"
+			source, reason = "rule", inputReason
 		}
 	}
 
 	pr.modelGroup = pr.model
 	pr.modelGroupMember = member
 	pr.modelGroupSource = source
+	pr.modelGroupReason = reason
 	pr.model = member
 	pr.stats.Model = member
 	if pr.profile != nil {
@@ -59,26 +79,38 @@ func (a *Application) resolveModelGroup(ctx context.Context, r *http.Request, pr
 	core.RewriteRequestModel(r, member)
 }
 
-func modelGroupRequiresCapable(pr *proxyRequest) bool {
+func modelGroupCapableReason(pr *proxyRequest) string {
 	if pr.profile == nil {
-		return false
+		return ""
 	}
-	return pr.profile.RequiresVision || pr.profile.RequiresFunctionCall || pr.profile.RequestedContext > 32768
+	if pr.profile.RequiresVision {
+		return "vision"
+	}
+	if pr.profile.RequiresFunctionCall {
+		return "function_call"
+	}
+	if pr.profile.RequestedContext > 32768 {
+		return "long_context"
+	}
+	return ""
 }
 
-func modelGroupText(r *http.Request, maxBytes int) (string, bool) {
+func modelGroupText(r *http.Request, maxBytes int) (string, string) {
 	if r.Body == nil || r.ContentLength == 0 {
-		return "", false
+		return "", "empty_body"
 	}
 	if maxBytes <= 0 {
 		maxBytes = defaultModelGroupTextBytes
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, int64(maxBytes)+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxModelGroupRequestBodyBytes+1))
 	if len(body) > 0 {
 		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), r.Body))
 	}
-	if err != nil || len(body) == 0 || len(body) > maxBytes {
-		return "", false
+	if err != nil || len(body) == 0 {
+		return "", "read_error"
+	}
+	if len(body) > maxModelGroupRequestBodyBytes {
+		return "", "request_too_large"
 	}
 
 	var request struct {
@@ -87,8 +119,11 @@ func modelGroupText(r *http.Request, maxBytes int) (string, bool) {
 		Tools     json.RawMessage   `json:"tools"`
 		Functions json.RawMessage   `json:"functions"`
 	}
-	if json.Unmarshal(body, &request) != nil || len(request.Tools) > 0 || len(request.Functions) > 0 {
-		return "", false
+	if json.Unmarshal(body, &request) != nil {
+		return "", "invalid_request"
+	}
+	if len(request.Tools) > 0 || len(request.Functions) > 0 {
+		return "", "tool_input"
 	}
 
 	parts := make([]string, 0, len(request.Messages)+1)
@@ -100,7 +135,7 @@ func modelGroupText(r *http.Request, maxBytes int) (string, bool) {
 			Content json.RawMessage `json:"content"`
 		}
 		if json.Unmarshal(raw, &message) != nil || len(message.Content) == 0 {
-			return "", false
+			return "", "unsupported_message"
 		}
 		var content string
 		if json.Unmarshal(message.Content, &content) == nil {
@@ -112,53 +147,75 @@ func modelGroupText(r *http.Request, maxBytes int) (string, bool) {
 			Text string `json:"text"`
 		}
 		if json.Unmarshal(message.Content, &contentParts) != nil {
-			return "", false
+			return "", "unsupported_content"
 		}
 		for _, part := range contentParts {
 			if part.Type != "text" || part.Text == "" {
-				return "", false
+				return "", "unsupported_content"
 			}
 			parts = append(parts, part.Text)
 		}
 	}
 	text := strings.TrimSpace(strings.Join(parts, "\n"))
-	return text, text != ""
+	if text == "" {
+		return "", "empty_text"
+	}
+	if len(text) > maxBytes {
+		text = text[len(text)-maxBytes:]
+		for len(text) > 0 && !utf8.RuneStart(text[0]) {
+			text = text[1:]
+		}
+	}
+	return text, ""
 }
 
-func classifyModelGroup(ctx context.Context, group config.ModelGroupConfig, groupName, text string) (string, bool) {
+func classifyModelGroup(ctx context.Context, group config.ModelGroupConfig, groupName, text string) (result modelGroupClassifierResult) {
+	started := time.Now()
+	defer func() { result.latency = time.Since(started) }()
 	timeout := group.Classifier.Timeout
 	if timeout <= 0 {
 		timeout = 100 * time.Millisecond
 	}
 	requestBody, err := json.Marshal(modelGroupClassifierRequest{Group: groupName, Text: text})
 	if err != nil {
-		return "", false
+		result.reason = "classifier_encode_error"
+		return result
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, group.Classifier.URL, bytes.NewReader(requestBody))
 	if err != nil {
-		return "", false
+		result.reason = "classifier_request_error"
+		return result
 	}
 	req.Header.Set("Content-Type", "application/json")
 	response, err := (&http.Client{}).Do(req)
 	if err != nil {
-		return "", false
+		result.reason = "classifier_unavailable"
+		return result
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", false
+		result.reason = "classifier_http_error"
+		return result
 	}
-	var result modelGroupClassifierResponse
-	if json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result) != nil || result.Confidence < group.Classifier.MinConfidence {
-		return "", false
+	var responseResult modelGroupClassifierResponse
+	if json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&responseResult) != nil {
+		result.reason = "classifier_invalid_response"
+		return result
 	}
-	switch result.Member {
+	result.confidence = responseResult.Confidence
+	if responseResult.Confidence < group.Classifier.MinConfidence {
+		result.reason = "classifier_low_confidence"
+		return result
+	}
+	switch responseResult.Member {
 	case "fast":
-		return group.FastModel, true
+		result.member, result.reason = group.FastModel, "classifier_selected"
 	case "capable":
-		return group.CapableModel, true
+		result.member, result.reason = group.CapableModel, "classifier_selected"
 	default:
-		return "", false
+		result.reason = "classifier_invalid_member"
 	}
+	return result
 }

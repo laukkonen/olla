@@ -36,18 +36,38 @@ type proxyRequest struct {
 	// stickyOutcome, stickySource, and sessionID are populated after endpoint
 	// selection so the routing outcome is visible in completed-request log lines.
 	// sessionID must only appear at DEBUG because client-supplied IDs are user data.
-	stickyOutcome    string
-	stickySource     string
-	sessionID        string
-	admissionClass   string
-	admissionSource  string
-	contentLength    int64
-	hadError         bool
-	isStreaming      bool
-	admissionWaited  time.Duration
-	modelGroup       string
-	modelGroupMember string
-	modelGroupSource string
+	stickyOutcome                  string
+	stickySource                   string
+	sessionID                      string
+	admissionClass                 string
+	admissionSource                string
+	contentLength                  int64
+	hadError                       bool
+	isStreaming                    bool
+	admissionWaited                time.Duration
+	modelGroup                     string
+	modelGroupMember               string
+	modelGroupSource               string
+	modelGroupReason               string
+	modelGroupClassifierAttempted  bool
+	modelGroupClassifierConfidence float64
+	modelGroupClassifierLatency    time.Duration
+}
+
+func modelGroupLogFields(pr *proxyRequest) []any {
+	fields := []any{
+		"model_group", pr.modelGroup,
+		"model_group_member", pr.modelGroupMember,
+		"model_group_source", pr.modelGroupSource,
+		"model_group_reason", pr.modelGroupReason,
+	}
+	if pr.modelGroupClassifierAttempted {
+		fields = append(fields,
+			"model_group_classifier_latency_ms", pr.modelGroupClassifierLatency.Milliseconds(),
+			"model_group_classifier_confidence", pr.modelGroupClassifierConfidence,
+		)
+	}
+	return fields
 }
 
 func (a *Application) proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -362,7 +382,7 @@ func (a *Application) logRequestStart(pr *proxyRequest, endpointCount int) {
 		logFields = append(logFields, "model", pr.model)
 	}
 	if pr.modelGroup != "" {
-		logFields = append(logFields, "model_group", pr.modelGroup, "model_group_member", pr.modelGroupMember, "model_group_source", pr.modelGroupSource)
+		logFields = append(logFields, modelGroupLogFields(pr)...)
 	}
 
 	// Add content length if it's a POST/PUT with body
@@ -440,7 +460,7 @@ func (a *Application) logRequestResult(pr *proxyRequest, err error) {
 			infoFields = append(infoFields, "model", pr.model)
 		}
 		if pr.modelGroup != "" {
-			infoFields = append(infoFields, "model_group", pr.modelGroup, "model_group_member", pr.modelGroupMember, "model_group_source", pr.modelGroupSource)
+			infoFields = append(infoFields, modelGroupLogFields(pr)...)
 		}
 
 		if pr.stats.TotalBytes > 0 {
@@ -541,7 +561,7 @@ func (a *Application) buildLogFields(pr *proxyRequest, duration time.Duration) [
 		"selection_ms", pr.stats.SelectionMs,
 	}
 	if pr.modelGroup != "" {
-		fields = append(fields, "model_group", pr.modelGroup, "model_group_member", pr.modelGroupMember, "model_group_source", pr.modelGroupSource)
+		fields = append(fields, modelGroupLogFields(pr)...)
 	}
 
 	if pr.stats.EndpointName == "" {
