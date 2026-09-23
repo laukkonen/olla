@@ -361,6 +361,9 @@ func (a *Application) logRequestStart(pr *proxyRequest, endpointCount int) {
 	if pr.model != "" {
 		logFields = append(logFields, "model", pr.model)
 	}
+	if pr.modelGroup != "" {
+		logFields = append(logFields, "model_group", pr.modelGroup, "model_group_member", pr.modelGroupMember, "model_group_source", pr.modelGroupSource)
+	}
 
 	// Add content length if it's a POST/PUT with body
 	if pr.contentLength > 0 {
@@ -435,6 +438,9 @@ func (a *Application) logRequestResult(pr *proxyRequest, err error) {
 
 		if pr.model != "" {
 			infoFields = append(infoFields, "model", pr.model)
+		}
+		if pr.modelGroup != "" {
+			infoFields = append(infoFields, "model_group", pr.modelGroup, "model_group_member", pr.modelGroupMember, "model_group_source", pr.modelGroupSource)
 		}
 
 		if pr.stats.TotalBytes > 0 {
