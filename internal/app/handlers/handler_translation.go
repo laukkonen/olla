@@ -374,6 +374,7 @@ func (a *Application) translationHandler(trans translator.RequestTranslator) htt
 
 		// Run through proxy pipeline (inspector, security, routing)
 		a.analyzeRequest(ctx, r, pr)
+		a.resolveModelGroup(ctx, r, pr)
 
 		// Inject sticky session key. bodyBytes is already buffered from the model-name
 		// extraction above, so pass it directly to avoid a second read/restore cycle.

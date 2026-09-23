@@ -239,7 +239,37 @@ func (c *Config) Validate() error {
 	if err := c.Dashboard.Validate(); err != nil {
 		return err
 	}
+	if err := c.ValidateModelGroups(); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+// ValidateModelGroups rejects an enabled-looking group that cannot safely fall
+// back to its capable member. Classifier URL is optional: without one a group
+// remains an explicit capable-model alias until its sidecar is deployed.
+func (c *Config) ValidateModelGroups() error {
+	for name, group := range c.ModelGroups {
+		if strings.TrimSpace(name) == "" {
+			return errors.New("model group name cannot be empty")
+		}
+		if strings.TrimSpace(group.FastModel) == "" {
+			return fmt.Errorf("model group %q fast_model must not be empty", name)
+		}
+		if strings.TrimSpace(group.CapableModel) == "" {
+			return fmt.Errorf("model group %q capable_model must not be empty", name)
+		}
+		if group.Classifier.Timeout < 0 {
+			return fmt.Errorf("model group %q classifier.timeout must be >= 0", name)
+		}
+		if group.Classifier.MaxTextBytes < 0 {
+			return fmt.Errorf("model group %q classifier.max_text_bytes must be >= 0", name)
+		}
+		if group.Classifier.MinConfidence < 0 || group.Classifier.MinConfidence > 1 {
+			return fmt.Errorf("model group %q classifier.min_confidence must be between 0 and 1", name)
+		}
+	}
 	return nil
 }
 

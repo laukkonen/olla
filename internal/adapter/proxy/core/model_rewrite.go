@@ -56,23 +56,23 @@ func RewriteModelForAlias(ctx context.Context, r *http.Request, endpoint *domain
 		return
 	}
 
-	if r.Body == nil || r.ContentLength == 0 {
+	RewriteRequestModel(r, actualModel)
+}
+
+// RewriteRequestModel replaces a top-level JSON model field without requiring
+// endpoint-specific alias resolution. Model groups use this once they have
+// selected their member before endpoint routing begins.
+func RewriteRequestModel(r *http.Request, model string) {
+	if r == nil || r.Body == nil || r.ContentLength == 0 || model == "" {
 		return
 	}
-
-	// Read the current body
 	bodyBytes, err := io.ReadAll(r.Body)
 	r.Body.Close()
 	if err != nil || len(bodyBytes) == 0 {
-		// restore original body on error
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		return
 	}
-
-	// Perform targeted replacement of the model field value
-	rewritten := rewriteModelField(bodyBytes, actualModel)
-
-	// Replace the request body with the rewritten content
+	rewritten := rewriteModelField(bodyBytes, model)
 	r.Body = io.NopCloser(bytes.NewReader(rewritten))
 	r.ContentLength = int64(len(rewritten))
 }

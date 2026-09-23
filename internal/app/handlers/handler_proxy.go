@@ -36,15 +36,18 @@ type proxyRequest struct {
 	// stickyOutcome, stickySource, and sessionID are populated after endpoint
 	// selection so the routing outcome is visible in completed-request log lines.
 	// sessionID must only appear at DEBUG because client-supplied IDs are user data.
-	stickyOutcome   string
-	stickySource    string
-	sessionID       string
-	admissionClass  string
-	admissionSource string
-	contentLength   int64
-	hadError        bool
-	isStreaming     bool
-	admissionWaited time.Duration
+	stickyOutcome    string
+	stickySource     string
+	sessionID        string
+	admissionClass   string
+	admissionSource  string
+	contentLength    int64
+	hadError         bool
+	isStreaming      bool
+	admissionWaited  time.Duration
+	modelGroup       string
+	modelGroupMember string
+	modelGroupSource string
 }
 
 func (a *Application) proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +56,7 @@ func (a *Application) proxyHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, r := a.setupRequestContext(r, pr.stats)
 
 	a.analyzeRequest(ctx, r, pr)
+	a.resolveModelGroup(ctx, r, pr)
 
 	// Sticky session key must be computed after analyzeRequest so the model
 	// name is available; inject into context before endpoint selection.
@@ -529,6 +533,9 @@ func (a *Application) buildLogFields(pr *proxyRequest, duration time.Duration) [
 		"header_processing_ms", pr.stats.HeaderProcessingMs,
 		"path_resolution_ms", pr.stats.PathResolutionMs,
 		"selection_ms", pr.stats.SelectionMs,
+	}
+	if pr.modelGroup != "" {
+		fields = append(fields, "model_group", pr.modelGroup, "model_group_member", pr.modelGroupMember, "model_group_source", pr.modelGroupSource)
 	}
 
 	if pr.stats.EndpointName == "" {

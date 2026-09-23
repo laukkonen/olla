@@ -26,16 +26,35 @@ type Config struct {
 	//       - gpt-oss:120b
 	//       - gpt-oss-120b-MLX
 	//       - gguf_gpt_oss_120b.gguf
-	ModelAliases  map[string][]string `yaml:"model_aliases,omitempty"`
-	Logging       LoggingConfig       `yaml:"logging"`
-	Filename      string              `yaml:"-"`
-	Dashboard     DashboardConfig     `yaml:"dashboard"`
-	Translators   TranslatorsConfig   `yaml:"translators"`
-	ModelRegistry ModelRegistryConfig `yaml:"model_registry"`
-	Discovery     DiscoveryConfig     `yaml:"discovery"`
-	Proxy         ProxyConfig         `yaml:"proxy"`
-	Server        ServerConfig        `yaml:"server"`
-	Engineering   EngineeringConfig   `yaml:"engineering"`
+	ModelAliases map[string][]string `yaml:"model_aliases,omitempty"`
+	// ModelGroups map an opt-in virtual model name to a fast and capable model.
+	// A group can optionally call a local typed-decision classifier to choose a
+	// member before ordinary model routing begins.
+	ModelGroups   map[string]ModelGroupConfig `yaml:"model_groups,omitempty"`
+	Logging       LoggingConfig               `yaml:"logging"`
+	Filename      string                      `yaml:"-"`
+	Dashboard     DashboardConfig             `yaml:"dashboard"`
+	Translators   TranslatorsConfig           `yaml:"translators"`
+	ModelRegistry ModelRegistryConfig         `yaml:"model_registry"`
+	Discovery     DiscoveryConfig             `yaml:"discovery"`
+	Proxy         ProxyConfig                 `yaml:"proxy"`
+	Server        ServerConfig                `yaml:"server"`
+	Engineering   EngineeringConfig           `yaml:"engineering"`
+}
+
+// ModelGroupConfig defines one caller-selected fast/capable model group.
+type ModelGroupConfig struct {
+	FastModel    string                     `yaml:"fast_model"`
+	CapableModel string                     `yaml:"capable_model"`
+	Classifier   ModelGroupClassifierConfig `yaml:"classifier"`
+}
+
+// ModelGroupClassifierConfig configures the group-local classifier sidecar.
+type ModelGroupClassifierConfig struct {
+	URL           string        `yaml:"url"`
+	Timeout       time.Duration `yaml:"timeout"`
+	MaxTextBytes  int           `yaml:"max_text_bytes"`
+	MinConfidence float64       `yaml:"min_confidence"`
 }
 
 // CorsConfig controls browser cross-origin access to the Olla API.

@@ -95,6 +95,7 @@ func (a *Application) providerProxyHandler(w http.ResponseWriter, r *http.Reques
 
 	ctx, r = a.setupRequestContext(r, pr.stats)
 	a.analyzeRequest(ctx, r, pr)
+	a.resolveModelGroup(ctx, r, pr)
 
 	// Sticky session key must be computed after analyzeRequest so the model name
 	// is populated; inject into context before endpoint selection so the sticky
